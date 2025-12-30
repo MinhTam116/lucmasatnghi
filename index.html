@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mô Phỏng Lực Ma Sát Nghỉ - Vật Lí 10</title>
+    <style>
+        :root {
+            --ground-color: #555;
+            --box-color: #d35400;
+            --arrow-push: #27ae60;
+            --arrow-friction: #c0392b;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 { color: #2c3e50; }
+
+        /* KHUNG MÔ PHỎNG */
+        #simulation-container {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 70%, #fff 70%);
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        #ground {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 120px; /* 30% of height */
+            background-color: var(--ground-color);
+            border-top: 3px solid #333;
+        }
+
+        /* THÙNG HÀNG */
+        #crate {
+            position: absolute;
+            bottom: 123px; /* ground height + border */
+            left: 50px;
+            width: 100px;
+            height: 100px;
+            background-color: var(--box-color);
+            border: 2px solid #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2rem;
+            z-index: 2;
+            transition: left 0.1s linear; /* Smooth movement when sliding */
+        }
+
+        /* NGƯỜI ĐẨY (STICKMAN ĐƠN GIẢN) */
+        #pusher {
+            position: absolute;
+            bottom: 123px;
+            left: -30px; /* Sẽ được update bằng JS */
+            width: 80px;
+            height: 120px;
+            z-index: 1;
+            transition: left 0.1s linear;
+        }
+        
+        /* VECTOR LỰC */
+        .vector {
+            position: absolute;
+            height: 10px;
+            transform-origin: left center;
+            display: flex;
+            align-items: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            transition: width 0.1s ease-out;
+            border-radius: 2px;
+        }
+
+        .vector::after {
+            content: '';
+            position: absolute;
+            right: -10px;
+            top: -5px;
+            border-top: 10px solid transparent;
+            border-bottom: 10px solid transparent;
+            border-left: 10px solid; 
+        }
+
+        #vector-push {
+            background-color: var(--arrow-push);
+            top: 40px; /* Vị trí trên thùng */
+            left: 50%; 
+            z-index: 3;
+        }
+        #vector-push::after { border-left-color: var(--arrow-push); }
+
+        #vector-friction {
+            background-color: var(--arrow-friction);
+            bottom: -5px; /* Sát mặt sàn */
+            left: 50%;
+            transform: translateX(-100%) rotate(180deg); /* Ngược chiều */
+            z-index: 3;
+        }
+        #vector-friction::after { border-left-color: var(--arrow-friction); }
+
+        /* BẢNG ĐIỀU KHIỂN & THÔNG SỐ */
+        #dashboard {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+            width: 800px;
+        }
+
+        .panel {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            flex: 1;
+        }
+
+        .control-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        
+        input[type=range] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        button {
+            background-color: #2980b9;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover { background-color: #3498db; }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-family: monospace;
+            font-size: 1.1rem;
+        }
+
+        .status-msg {
+            font-weight: bold;
+            text-align: center;
+            margin-top: 10px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .status-static { background-color: #fff3cd; color: #856404; }
+        .status-moving { background-color: #d4edda; color: #155724; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Mô Phỏng Lực Ma Sát (Vật Lí 10)</h1>
+
+    <div id="simulation-container">
+        <div id="pusher">
+            <svg width="80" height="120" viewBox="0 0 80 120">
+                <circle cx="40" cy="20" r="15" fill="#333" /> <line x1="40" y1="35" x2="40" y2="80" stroke="#333" stroke-width="5"/> <line x1="40" y1="80" x2="10" y2="115" stroke="#333" stroke-width="5"/> <line x1="40" y1="80" x2="70" y2="115" stroke="#333" stroke-width="5"/> <line x1="40" y1="45" x2="75" y2="65" stroke="#333" stroke-width="5"/> </svg>
+        </div>
+
+        <div id="crate">
+            <span id="mass-display-box">50kg</span>
+            <div id="vector-push" class="vector" style="width: 0px;"></div>
+            <div id="vector-friction" class="vector" style="width: 0px;"></div>
+        </div>
+
+        <div id="ground"></div>
+    </div>
+
+    <div id="dashboard">
+        <div class="panel">
+            <h3>Bảng Điều Khiển</h3>
+            <div class="control-group">
+                <label for="forceSlider">Lực Đẩy (F<sub>đẩy</sub>): <span id="forceVal">0</span> N</label>
+                <input type="range" id="forceSlider" min="0" max="400" value="0" step="1">
+            </div>
+            <div class="control-group">
+                <label>Khối lượng (m): 50 kg</label>
+            </div>
+            <button onclick="resetSimulation()">Reset Vị Trí</button>
+        </div>
+
+        <div class="panel">
+            <h3>Thông Số Vật Lý</h3>
+            <div class="stat-row">
+                <span>Trạng thái:</span>
+                <span id="status-text">Đứng yên</span>
+            </div>
+            <div class="stat-row" style="color: var(--arrow-push);">
+                <span>F<sub>đẩy</sub>:</span>
+                <span id="push-readout">0 N</span>
+            </div>
+            <div class="stat-row" style="color: var(--arrow-friction);">
+                <span>F<sub>ma sát</sub>:</span>
+                <span id="friction-readout">0 N</span>
+            </div>
+            <div class="stat-row">
+                <span>Hợp lực:</span>
+                <span id="net-force">0 N</span>
+            </div>
+             <div class="stat-row" style="font-size: 0.9em; color: #666; border-top: 1px dashed #ccc; padding-top:5px; margin-top:5px;">
+                <span>Giới hạn F<sub>msn(max)</sub>:</span>
+                <span id="max-static">0 N</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CẤU HÌNH VẬT LÝ ---
+        const mass = 50; // kg
+        const g = 9.8; // m/s^2
+        const mu_static = 0.5; // Hệ số ma sát nghỉ
+        const mu_kinetic = 0.4; // Hệ số ma sát trượt
+        
+        // Tính toán giới hạn
+        const N = mass * g; // Phản lực
+        const maxStaticFriction = mu_static * N; // F_msn max = 245 N
+        const kineticFriction = mu_kinetic * N; // F_mst = 196 N
+
+        // Biến trạng thái
+        let appliedForce = 0;
+        let velocity = 0;
+        let position = 50; // px
+        let isMoving = false;
+        let animationFrame;
+        let lastTime = 0;
+
+        // --- DOM ELEMENTS ---
+        const slider = document.getElementById('forceSlider');
+        const forceVal = document.getElementById('forceVal');
+        const crate = document.getElementById('crate');
+        const pusher = document.getElementById('pusher');
+        const vectorPush = document.getElementById('vector-push');
+        const vectorFriction = document.getElementById('vector-friction');
+        
+        // Readouts
+        const statusText = document.getElementById('status-text');
+        const pushReadout = document.getElementById('push-readout');
+        const frictionReadout = document.getElementById('friction-readout');
+        const netForceReadout = document.getElementById('net-force');
+        const maxStaticReadout = document.getElementById('max-static');
+
+        // Hiển thị giá trị cố định ban đầu
+        maxStaticReadout.textContent = maxStaticFriction.toFixed(1) + " N";
+
+        // --- HÀM CẬP NHẬT ---
+        function updatePhysics(deltaTime) {
+            let frictionForce = 0;
+            let netForce = 0;
+
+            // 1. Logic Ma Sát
+            if (isMoving) {
+                // Nếu đang chuyển động: Ma sát = Ma sát trượt
+                frictionForce = kineticFriction;
+                // Hướng ma sát ngược chiều chuyển động (đơn giản hoá là ngược chiều đẩy)
+            } else {
+                // Nếu đang đứng yên
+                if (appliedForce <= maxStaticFriction) {
+                    // Ma sát nghỉ = Lực đẩy (Cân bằng)
+                    frictionForce = appliedForce;
+                } else {
+                    // Bắt đầu trượt
+                    isMoving = true;
+                    frictionForce = kineticFriction; // Chuyển ngay sang ma sát trượt
+                }
+            }
+
+            // 2. Tính lực tổng hợp và chuyển động
+            if (isMoving) {
+                netForce = appliedForce - frictionForce;
+                if (netForce < 0 && velocity <= 0.1) {
+                    // Dừng lại nếu lực đẩy nhỏ hơn ma sát trượt
+                    isMoving = false;
+                    velocity = 0;
+                    netForce = 0;
+                    frictionForce = appliedForce; // Quay về ma sát nghỉ
+                } else {
+                    const acceleration = netForce / mass;
+                    velocity += acceleration * deltaTime;
+                    position += velocity * deltaTime * 20; // *20 để scale pixel cho dễ nhìn
+                }
+            } else {
+                velocity = 0;
+                netForce = 0;
+            }
+
+            // Giới hạn màn hình
+            if (position > 650) {
+                position = 650;
+                velocity = 0; // Đụng tường vô hình
+            }
+
+            // 3. Cập nhật UI
+            updateUI(frictionForce, netForce);
+        }
+
+        function updateUI(frictionForce, netForce) {
+            // Cập nhật vị trí thùng và người
+            crate.style.left = position + 'px';
+            pusher.style.left = (position - 80) + 'px';
+
+            // Cập nhật Vector (Độ dài arrow = Force / 2 để vừa màn hình)
+            vectorPush.style.width = (appliedForce / 2) + 'px';
+            // Ẩn vector nếu lực = 0
+            vectorPush.style.opacity = appliedForce > 0 ? 1 : 0; 
+
+            vectorFriction.style.width = (frictionForce / 2) + 'px';
+            vectorFriction.style.opacity = frictionForce > 0 ? 1 : 0;
+
+            // Cập nhật số liệu
+            forceVal.innerText = appliedForce;
+            pushReadout.innerText = appliedForce + " N";
+            frictionReadout.innerText = frictionForce.toFixed(1) + " N";
+            netForceReadout.innerText = netForce.toFixed(1) + " N";
+
+            // Cập nhật trạng thái
+            if (isMoving) {
+                statusText.innerText = "Đang trượt (Ma sát trượt)";
+                statusText.className = "status-msg status-moving";
+            } else {
+                statusText.innerText = "Đứng yên (Ma sát nghỉ)";
+                statusText.className = "status-msg status-static";
+            }
+        }
+
+        // --- SỰ KIỆN ---
+        slider.addEventListener('input', (e) => {
+            appliedForce = parseInt(e.target.value);
+        });
+
+        function resetSimulation() {
+            slider.value = 0;
+            appliedForce = 0;
+            velocity = 0;
+            position = 50;
+            isMoving = false;
+            updateUI(0, 0);
+        }
+
+        // --- VÒNG LẶP GAME LOOP ---
+        function loop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = (timestamp - lastTime) / 1000; // Đổi sang giây
+            lastTime = timestamp;
+
+            updatePhysics(deltaTime);
+            animationFrame = requestAnimationFrame(loop);
+        }
+
+        // Bắt đầu
+        requestAnimationFrame(loop);
+
+    </script>
+</body>
+</html>
